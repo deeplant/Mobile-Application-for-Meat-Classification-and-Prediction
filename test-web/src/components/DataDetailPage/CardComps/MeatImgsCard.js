@@ -59,6 +59,17 @@ const MeatImgsCard = ({
       setCurrIdx(Math.max(0, imgArr.length - 1));
     }
   }, [imgArr.length, currentIdx]);
+  // 육류 회차 정보 추출
+  const meatSeq = processed_data_seq
+    ? processed_data_seq.map((item) => {
+        if (item === '원육') {
+          return 0; // 원육은 0으로 변환
+        } else {
+          const numberMatch = item.match(/\d+/);
+          return numberMatch ? parseInt(numberMatch[0], 10) : null; // 숫자 추출
+        }
+      })
+    : [0]; // 회차 정보가 없는 경우 원육만 표시
 
   // 1) 이미지 페이지네이션 '>' 버튼 클릭
   const handleNextClick = () => {
@@ -89,10 +100,16 @@ const MeatImgsCard = ({
     newImages[currentIdx] = reader.result;
     setImgArr(newImages);
   };
-
   // 툴팁 이미지 데이터
-  const [tooltipImgData, setTooltipImgData] = useState([]);
-  const { data, isLoading, isError } = useOpencvImageData(id, currentIdx);
+  const [tooltipImgData, setTooltipImgData] = useState(null);
+  const { data, isLoading, isError } = useOpencvImageData(
+    id,
+    meatSeq[currentIdx]
+  );
+  // currentIdx가 변경될 때마다 tooltipImgData 초기화
+  useEffect(() => {
+    setTooltipImgData(null);
+  }, [currentIdx]);
 
   const handleFileChange = (e) => {
     handleImgChange({
@@ -114,6 +131,53 @@ const MeatImgsCard = ({
       isPost,
       data,
     });
+  };
+
+  const renderTooltipContent = () => {
+    // 현재 이미지가 없는 경우 툴팁 표시하지 않음
+    if (!imgArr[currentIdx] || imgArr[currentIdx] === 'null') {
+      return null;
+    }
+
+    if (isLoading) {
+      return <div style={style.overlayNotExistWrapper}>Loading...</div>;
+    }
+
+    if (isError || !tooltipImgData) {
+      return (
+        <div style={style.overlayNotExistWrapper}>
+          단면, 컬러팔레트 이미지가 없습니다
+        </div>
+      );
+    }
+
+    const hasRequiredData =
+      tooltipImgData.segmentImage &&
+      tooltipImgData.fatColorPalette &&
+      tooltipImgData.proteinColorPalette &&
+      tooltipImgData.totalColorPalette;
+
+    if (!hasRequiredData) {
+      return (
+        <div style={style.overlayNotExistWrapper}>
+          올바르지 않은 데이터입니다
+        </div>
+      );
+    }
+
+    const hasInvalidColors = tooltipImgData.fatColorPalette.every(
+      (color) => color[0] === 0 && color[1] === 0 && color[2] === 0
+    );
+
+    if (hasInvalidColors) {
+      return (
+        <div style={style.overlayNotExistWrapper}>
+          올바르지 않은 데이터입니다
+        </div>
+      );
+    }
+
+    return <OpencvImgMaker data={tooltipImgData} />;
   };
 
   // 데이터 전처리
@@ -155,6 +219,7 @@ const MeatImgsCard = ({
               </div>
             )
           }
+
           <div style={{ display: 'flex' }}>
             {
               /**
@@ -204,39 +269,7 @@ const MeatImgsCard = ({
             placement="right"
             delay={{ show: 250, hide: 400 }}
             overlay={
-              <Tooltip id="button-tooltip">
-                {' '}
-                {isLoading ? (
-                  <div style={style.overlayNotExistWrapper}>Loading...</div>
-                ) : isError || !data || data.msg ? (
-                  // 데이터가 없는 경우
-                  <div style={style.overlayNotExistWrapper}>
-                    단면, 컬러팔레트 이미지가 없습니다
-                  </div>
-                ) : data.segmentImage &&
-                  data.fatColorPalette &&
-                  data.proteinColorPalette &&
-                  data.totalColorPalette ? (
-                  // 올바른 데이터인지 검사
-                  data.fatColorPalette.every(
-                    (color) =>
-                      color[0] === 0 && color[1] === 0 && color[2] === 0
-                  ) ? (
-                    // 컬러가 모두 0인 경우
-                    <div style={style.overlayNotExistWrapper}>
-                      올바르지 않은 데이터입니다
-                    </div>
-                  ) : (
-                    // 데이터가 있는 경우
-                    <OpencvImgMaker data={tooltipImgData} />
-                  )
-                ) : (
-                  // 그 외
-                  <div style={style.overlayNotExistWrapper}>
-                    오류로 인해 단면, 컬러팔레트 이미지를 불러올 수 없습니다
-                  </div>
-                )}
-              </Tooltip>
+              <Tooltip id="button-tooltip"> {renderTooltipContent()}</Tooltip>
             }
           >
             <div style={style.imgContainer}>
